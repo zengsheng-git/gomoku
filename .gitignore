@@ -1,0 +1,40 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+target/
+dist
+dist-ssr
+*.local
+.msi
+
+# Tauri 自动生成
+server/gen/
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*.onnx
+*.exe
+*.dll
+*.so
+*.dylib
+__pycache__
+# Rapfi 引擎二进制与权重随仓库分发
+!libs/rapfi/rapfi.exe
+!libs/rapfi/config.toml
+!libs/rapfi/model210901.bin
+!libs/rapfi/*.lz4

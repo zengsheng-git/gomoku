@@ -1,0 +1,151 @@
+/*
+ * 15×15 棋盘：每个 .cell 代表一个交叉点。
+ * #gomoku-board 是木纹外框（留 17px 边距），内层 .grid 承载 15×15 单元格。
+ * 线条：首列 box-shadow 画左线、首行画上线，其余列/行用右边框/下边框；
+ * 最后一列/行不加边框，保证横竖各恰好 15 条线，交叉点位于 35px 整倍数上。
+ * 棋子锚定在单元格左上角（即交叉点），translate(-50%,-50%) 居中。
+ */
+
+#gomoku-board {
+    width: 490px;
+    height: 490px;
+    padding: 17px;
+    box-sizing: content-box;
+    /* 浅枫木色，与全局 bg.jpg 背景同色系（参考象棋版 board.png 配色） */
+    background:
+        radial-gradient(circle at 30% 25%, rgba(255, 252, 242, 0.55), transparent 65%),
+        linear-gradient(135deg, #f4e5c6 0%, #eedbb4 45%, #e7d0a4 100%);
+    border: 1px solid rgba(160, 120, 60, 0.45);
+    border-radius: 6px;
+    box-shadow: 0 3px 12px rgba(90, 60, 20, 0.28);
+    position: absolute;
+    top: 90px;
+    left: 14px;
+    z-index: 10;
+    overflow: hidden;
+}
+
+#gomoku-board .grid {
+    position: absolute;
+    left: 17px;
+    top: 17px;
+    width: 525px;
+    height: 525px;
+}
+
+.cell {
+    width: 35px;
+    height: 35px;
+    box-sizing: border-box;
+    border-right: 1px solid rgba(60, 35, 10, 0.75);
+    border-bottom: 1px solid rgba(60, 35, 10, 0.75);
+    float: left;
+    position: relative;
+    cursor: default;
+    z-index: 1;
+}
+
+/* 最后一列/最后一行的单元格位于网格线之外，
+   不能画任何线，否则会在棋盘边缘外多出半格线段 */
+.cell:nth-child(15n),
+.cell:nth-child(n + 211) {
+    border-right: none;
+    border-bottom: none;
+}
+
+/* 首列画左边界线、首行画上边界线（不含末行/末列角上的溢出格）。
+   用 inset box-shadow 而非 border，避免挤占单元格内部导致边石偏移 1px */
+.cell:nth-child(15n + 1):not(:nth-child(n + 211)) {
+    box-shadow: inset 1px 0 0 rgba(60, 35, 10, 0.75);
+    clear: left;
+}
+
+.cell:nth-child(-n + 15):not(:nth-child(15n)) {
+    box-shadow: inset 0 1px 0 rgba(60, 35, 10, 0.75);
+}
+
+.cell:nth-child(15n + 1):nth-child(-n + 15) {
+    box-shadow: inset 1px 0 0 rgba(60, 35, 10, 0.75), inset 0 1px 0 rgba(60, 35, 10, 0.75);
+}
+
+/* 棋子：中心压在交叉点（单元格左上角）上 */
+.cell .stone {
+    position: absolute;
+    left: 0;
+    top: 0;
+    transform: translate(-50%, -50%);
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    display: block;
+    z-index: 1;
+}
+
+.stone-black {
+    background: radial-gradient(circle at 32% 28%, #5a5a5a 0%, #2e2e2e 45%, #0c0c0c 100%);
+    box-shadow: 1px 2px 4px rgba(0, 0, 0, 0.55);
+}
+
+.stone-white {
+    background: radial-gradient(circle at 32% 28%, #ffffff 0%, #f2f2f2 55%, #cfcfcf 100%);
+    box-shadow: 1px 2px 4px rgba(0, 0, 0, 0.4);
+    border: 1px solid #b9b9b9;
+    box-sizing: border-box;
+}
+
+/* 星位与天元：同样压在交叉点上 */
+.cell.star::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0;
+    transform: translate(-50%, -50%);
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: rgba(60, 35, 10, 0.8);
+    z-index: 0;
+}
+
+/* 引擎建议落点 */
+.suggest-select::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0;
+    transform: translate(-50%, -50%);
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    box-shadow: 0 0 0 3px #e74c3c;
+    background-color: rgba(231, 76, 60, 0.22);
+    z-index: 2;
+}
+
+/* 次优候选落点 */
+.alt-select::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0;
+    transform: translate(-50%, -50%);
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    box-shadow: 0 0 0 2px #9b59b6;
+    z-index: 2;
+}
+
+/* 对手最新落点 */
+.last-select::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0;
+    transform: translate(-50%, -50%);
+    width: 30px;
+    height: 30px;
+    border-radius: 6px;
+    box-shadow: 0 0 0 2px #3498db;
+    z-index: 2;
+}

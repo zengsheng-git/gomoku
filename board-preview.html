@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>board preview</title>
+<link rel="stylesheet" href="./src/assets/css/board.css" />
+<style>
+    body {
+        margin: 0;
+        background-image: url('./src/assets/images/bg.jpg');
+        background-size: cover;
+        background-position: center;
+        width: 600px;
+        height: 680px;
+        position: relative;
+    }
+    .label { color: #1a4f9c; font: 12px sans-serif; position: absolute; top: 660px; left: 12px; }
+</style>
+</head>
+<body>
+<div id="gomoku-board"><div class="grid" id="grid"></div></div>
+<div class="label">预览：横竖各 15 条线，棋子压在交叉点上</div>
+<script>
+    const stars = new Set(["d4", "l4", "h8", "d12", "l12"]);
+    const stones = { a1: 1, o1: 2, a15: 2, o15: 1, h8: 1, d4: 2, l12: 1, f10: 1, e9: 2, g9: 2 };
+    const suggest = "f10", alts = ["e9", "g9"], last = "d4";
+    const grid = document.getElementById("grid");
+    for (let y = 0; y < 15; y++) {
+        for (let x = 0; x < 15; x++) {
+            const id = String.fromCharCode(97 + x) + (y + 1);
+            const cell = document.createElement("div");
+            cell.id = id;
+            cell.className = "cell" + (stars.has(id) ? " star" : "");
+            const stone = document.createElement("span");
+            stone.className = "stone" + (stones[id] === 1 ? " stone-black" : stones[id] === 2 ? " stone-white" : "");
+            cell.appendChild(stone);
+            if (id === suggest) cell.classList.add("suggest-select");
+            if (alts.includes(id)) cell.classList.add("alt-select");
+            if (id === last) cell.classList.add("last-select");
+            grid.appendChild(cell);
+        }
+    }
+</script>
+</body>
+</html>
