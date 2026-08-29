@@ -12,7 +12,7 @@ target/
 dist
 dist-ssr
 *.local
-.msi
+*.msi
 
 # Tauri 自动生成
 server/gen/
