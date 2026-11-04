@@ -38,3 +38,6 @@ __pycache__
 !libs/rapfi/config.toml
 !libs/rapfi/model210901.bin
 !libs/rapfi/*.lz4
+
+# 授权私钥(绝不入库)
+license-private.key

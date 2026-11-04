@@ -96,7 +96,8 @@ listen("analyse", async (event) => {
 
 <template>
     <div id="gomoku-board">
-        <div class="grid">
+        <!-- 注意: 类名不能用 "grid", 会撞 Tailwind 的 display:grid 工具类破坏 float 布局 -->
+        <div class="go-grid">
             <div v-for="cell in CELLS" :key="cell.id" :id="cell.id" class="cell" :class="{ star: cell.star }">
                 <span class="stone"></span>
             </div>

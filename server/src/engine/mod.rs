@@ -247,6 +247,11 @@ impl Engine {
 
     /// 摆放局面并分析。返回 None 表示无法分析
     pub fn search(&mut self, board: &board::Board, params: &EngineConfig) -> Option<QueryResult> {
+        // 授权闸门: 试用结束未授权时后端强制锁定免费档(深度 1), 前端展示可被绕过, 此处是真正约束
+        let mut params = *params;
+        if crate::license::locked() {
+            params.depth = 1;
+        }
         let camp = board::turn_of(board);
         self.write_command("YXBOARD");
         for (stone, x, y) in board::engine_move_sequence(board) {
@@ -254,7 +259,7 @@ impl Engine {
         }
         self.write_command("DONE");
 
-        let result = self.bestmove(params, camp);
+        let result = self.bestmove(&params, camp);
         match result.state {
             QueryState::Success => Some(result),
             _ => {

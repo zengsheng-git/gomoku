@@ -10,6 +10,7 @@ use tauri::Manager as _;
 mod board;
 mod config;
 mod engine;
+pub mod license;
 mod listen;
 mod logger;
 mod vision;
@@ -32,6 +33,7 @@ pub fn run() {
 
             let _ = SHARED_STATE.get_or_init(|| {
                 let config = config::Config::load(&app.path().app_data_dir().unwrap());
+                license::init(&app.path().app_data_dir().unwrap());
                 let lib_path = app.path().resolve("../libs/rapfi", tauri::path::BaseDirectory::Resource).unwrap();
                 let mut engine = Engine::new(&lib_path);
                 engine.apply_static_config(&config.engine);
@@ -61,6 +63,8 @@ pub fn run() {
             config::set_engine_alt_score_gap,
             config::set_engine_rule,
             config::set_calibration,
+            license::get_license_status,
+            license::activate_license,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

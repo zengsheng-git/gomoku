@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { listen } from '@tauri-apps/api/event';
-import { LogInst, NCard, NDivider, NFlex, NLog, NText } from 'naive-ui';
-import { ref } from 'vue';
+import { ref, nextTick } from 'vue';
 
 interface Analyse {
     depth: number,           // 深度
@@ -25,8 +24,9 @@ const best = ref({
     move: "----",
     depth: 0,
     evalText: "--",
-    evalType: "info" as "error" | "success" | "info" | "default",
+    evalType: "info" as "error" | "success" | "info",
 })
+const logBox = ref<HTMLElement | null>(null)
 
 // 我方执子偏好（auto/black/white），存于本地，由工具栏设置
 function mySide(): 'auto' | 'black' | 'white' {
@@ -40,7 +40,10 @@ listen('analyse', async (event) => {
     if (logs.value.length > 128) {
         logs.value.shift();
     }
-    logInstRef.value?.scrollTo({ position: 'bottom', silent: true })
+    // 自动滚到底部
+    nextTick(() => {
+        if (logBox.value) logBox.value.scrollTop = logBox.value.scrollHeight;
+    });
 
     best.value.move = (data.pvs[0] ?? "----").toUpperCase();
     best.value.depth = data.depth;
@@ -63,8 +66,6 @@ listen('analyse', async (event) => {
         best.value.evalType = evalResult.type;
     }
 })
-
-const logInstRef = ref<LogInst | null>(null)
 
 // 中性解读：只描述行棋方局势，不区分敌我
 function formatEvalNeutral(score: number): string {
@@ -92,40 +93,52 @@ function formatEval(score: number, isMine: boolean, hasEval: boolean): { text: s
     return { text: formatEvalNeutral(score), type };
 }
 
+// 评分类文字配色: 红=利好我方, 绿=利好对方, 中性灰
+const evalCls = {
+    error: "text-red-600",
+    success: "text-green-600",
+    info: "text-stone-500",
+}
 </script>
 
 <template>
-    <n-card title="局面分析" :bordered="false" class="textlog" content-style="color: blue">
-        <n-flex justify="space-between" align="end">
-            <n-text type="info" class="analyse-title" strong>
+    <section class="panel-card textlog">
+        <h2 class="panel-title">局面分析</h2>
+        <div class="flex items-end justify-between">
+            <span class="analyse-title font-bold text-sky-700">
                 {{ best.side }} {{ best.move }}
-            </n-text>
-            <n-text type="warning">
-                深度 {{ best.depth }}
-            </n-text>
-        </n-flex>
-        <n-flex justify="space-between" align="end">
-            <n-text :type="best.evalType">
+            </span>
+            <span class="text-xs text-amber-600">深度 {{ best.depth }}</span>
+        </div>
+        <div class="mt-1 flex items-baseline justify-between">
+            <span :class="['text-[13px] font-medium', evalCls[best.evalType]]">
                 {{ best.evalText }}
-            </n-text>
-            <n-text depth="3" style="font-size: 12px">
-                黑 {{ counts.black }} · 白 {{ counts.white }}
-            </n-text>
-        </n-flex>
+            </span>
+            <span class="text-xs text-stone-400">黑 {{ counts.black }} · 白 {{ counts.white }}</span>
+        </div>
         <div v-if="alternatives.length" class="alternatives">
-            <n-text strong style="color: #9b59b6">次优招法</n-text>
+            <span class="text-[13px] font-semibold" style="color: #9b59b6">次优招法</span>
             <div v-for="(m, i) in alternatives" :key="i" class="alt-item">
-                <n-text depth="3">{{ i + 2 }}. {{ m.toUpperCase() }}</n-text>
+                <span class="text-stone-400">{{ i + 2 }}. {{ m.toUpperCase() }}</span>
             </div>
         </div>
-        <n-divider />
-        <n-log class="analyse-log" :rows=18 ref="logInst" :line-height="1.5" :lines="logs" :font-size="10" />
-    </n-card>
+        <div ref="logBox" class="analyse-log mt-2 overflow-y-auto">
+            <p v-for="(line, i) in logs" :key="i" class="log-line">{{ line }}</p>
+        </div>
+    </section>
 </template>
 
 <style scoped>
 .analyse-log {
-    height: 300px !important;
+    height: 300px;
+    border-top: 1px solid #e7e0d2;
+    padding-top: 6px;
+    font-size: 10px;
+    line-height: 1.5;
+}
+
+.log-line {
+    color: #78716c;
 }
 
 .analyse-title {
@@ -144,12 +157,11 @@ function formatEval(score: number, isMine: boolean, hasEval: boolean): { text: s
 }
 
 .textlog {
+    position: absolute;
+    /* 与棋盘(top:90, 高530)完全齐平 */
     width: 280px;
-    height: 560px;
+    height: 530px;
     left: 580px;
-    top: 0px;
-    /* 与象棋版一致：透明面板，文字直接印在木纹上 */
-    background-color: transparent;
-    --n-color: transparent;
+    top: 90px;
 }
 </style>

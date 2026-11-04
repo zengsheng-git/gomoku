@@ -14,8 +14,8 @@
         "windows": [
             {
                 "title": "五子棋",
-                "width": 880,
-                "height": 700,
+                "width": 874,
+                "height": 634,
                 "resizable": false,
                 "hiddenTitle": true,
                 "fullscreen": false,

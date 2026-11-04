@@ -1,32 +1,13 @@
 <script setup lang="ts">
 import { invoke } from "@tauri-apps/api/core";
-import { onMounted, ref, h, computed } from "vue";
-import { useDialog } from "naive-ui";
-import {
-    NButton,
-    NCard,
-    NFlex,
-    NForm,
-    NFormItem,
-    NInputNumber,
-    NSelect,
-    NDrawer,
-    NDrawerContent,
-    NSpace,
-    NTooltip,
-    NDivider,
-    NEmpty,
-    NScrollbar,
-    NTag,
-    NInput,
-    NModal,
-} from "naive-ui";
+import { onMounted, ref, computed } from "vue";
 
-const options = [
-    { label: "连线分析", value: "LinkAnaly", disabled: false },
-    { label: "连线对战", value: "LinkPlay", disabled: true },
-    { label: "人机对弈", value: "Offline", disabled: true },
-];
+import { alertBox } from "../modal";
+import type { LicenseStatus } from "../license-types";
+import WindowPicker, { type WindowItem } from "./ui/WindowPicker.vue";
+import LicenseDialog from "./ui/LicenseDialog.vue";
+
+const options = [{ label: "连线分析", value: "LinkAnaly" }];
 
 interface EngineConfig {
     depth: number;
@@ -71,9 +52,38 @@ function setSide(v: 'auto' | 'black' | 'white') {
 const showEngineConfig = ref(false);
 const isEngineRunning = ref(false);
 
+// 授权状态与激活弹窗: 试用结束未授权时启动自动弹出一次
+const licenseStatus = ref<LicenseStatus>({
+    licensed: false,
+    name: "",
+    expire: "",
+    trial_days_left: 7,
+    trial_expired: false,
+});
+const showLicense = ref(false);
+
+async function refreshLicense() {
+    try {
+        licenseStatus.value = await invoke<LicenseStatus>("get_license_status");
+    } catch (e) {
+        console.error("获取授权状态失败:", e);
+    }
+}
+
 onMounted(async () => {
     await getEngineConfig();
+    await refreshLicense();
+    // 试用结束未授权: 每次启动弹出激活窗口
+    if (licenseStatus.value.trial_expired && !licenseStatus.value.licensed) {
+        showLicense.value = true;
+    }
 });
+
+// 激活成功: 刷新状态(免费档闸门在后端, 无需重发配置)
+function onLicenseUpdated(status: LicenseStatus) {
+    licenseStatus.value = status;
+    showLicense.value = false;
+}
 
 async function stopListen() {
     await invoke("stop_listen");
@@ -88,101 +98,40 @@ interface WindowInfo {
     height: number;
 }
 
-const dialog = useDialog();
-
-// 弹出窗口选择对话框，返回选中的窗口（取消返回 null）
+// 窗口选择器(复用 WindowPicker): 返回选中的窗口(取消返回 null)
 function pickWindow(): Promise<WindowInfo | null> {
     return new Promise(async resolve => {
         try {
             const windows: WindowInfo[] = await invoke("list_windows");
             if (windows.length === 0) {
-                dialog.warning({ title: "警告", content: "没有找到可用的窗口", positiveText: "确定", showIcon: true });
+                alertBox("警告", "没有找到可用的窗口", "warning");
                 resolve(null);
                 return;
             }
-
-            const selectedWindowId = ref<number | null>(null);
-            const searchQuery = ref("");
-            const filteredWindows = computed(() => {
-                if (!searchQuery.value) return windows;
-                const query = searchQuery.value.toLowerCase();
-                return windows.filter(
-                    w => w.title.toLowerCase().includes(query) || w.app_name.toLowerCase().includes(query)
-                );
-            });
-
-            dialog.info({
-                title: "选择目标窗口",
-                class: "window-select-dialog",
-                content: () =>
-                    h(NFlex, { vertical: true, style: "gap: 16px" }, [
-                        h(NInput, {
-                            clearable: true,
-                            placeholder: "搜索窗口...",
-                            "onUpdate:value": (val: string) => (searchQuery.value = val),
-                            style: "width: 100%",
-                        }),
-                        h(NScrollbar, { style: "max-height: 300px" }, [
-                            filteredWindows.value.length > 0
-                                ? h(
-                                      NSpace,
-                                      { vertical: true, size: "small" },
-                                      filteredWindows.value.map(w =>
-                                          h(
-                                              NCard,
-                                              {
-                                                  hoverable: true,
-                                                  size: "small",
-                                                  bordered: true,
-                                                  class: selectedWindowId.value === w.id ? "selected-window" : "",
-                                                  onClick: () => (selectedWindowId.value = w.id),
-                                              },
-                                              {
-                                                  default: () => [
-                                                      h(NFlex, { align: "center", justify: "space-between" }, [
-                                                          h("div", [
-                                                              h("div", { class: "window-title" }, w.title),
-                                                              h("div", { class: "window-app" }, [
-                                                                  w.app_name,
-                                                                  h(NTag, { size: "tiny", type: "info", style: "margin-left: 8px" },
-                                                                      { default: () => `${w.width}×${w.height}` }),
-                                                              ]),
-                                                          ]),
-                                                          h(NButton, {
-                                                              tertiary: true,
-                                                              circle: true,
-                                                              type: selectedWindowId.value === w.id ? "primary" : "default",
-                                                              size: "small",
-                                                          }, { default: () => (selectedWindowId.value === w.id ? "✓" : "") }),
-                                                      ]),
-                                                  ],
-                                              }
-                                          )
-                                      )
-                                  )
-                                : h(NEmpty, { description: "没有找到匹配的窗口" }),
-                        ]),
-                    ]),
-                positiveText: "确定",
-                negativeText: "取消",
-                style: "max-width: 500px",
-                maskClosable: false,
-                onPositiveClick: () => {
-                    const window = windows.find(w => w.id === selectedWindowId.value);
-                    if (!window) {
-                        dialog.warning({ title: "提示", content: "请先选择一个窗口", positiveText: "确定" });
-                        return false;
-                    }
-                    resolve(window);
-                },
-                onNegativeClick: () => resolve(null),
-                onClose: () => resolve(null),
-            });
+            pickerWindows.value = windows;
+            pickerResolve = resolve;
+            showPicker.value = true;
         } catch (error) {
-            dialog.error({ title: "错误", content: "获取窗口列表失败: " + String(error), positiveText: "确定" });
+            alertBox("错误", "获取窗口列表失败: " + String(error), "error");
             resolve(null);
         }
     });
+}
+
+let pickerResolve: ((w: WindowInfo | null) => void) | null = null;
+const showPicker = ref(false);
+const pickerWindows = ref<WindowItem[]>([]);
+
+function onPickerConfirm(window: WindowItem) {
+    showPicker.value = false;
+    pickerResolve?.(window as WindowInfo);
+    pickerResolve = null;
+}
+
+function onPickerCancel() {
+    showPicker.value = false;
+    pickerResolve?.(null);
+    pickerResolve = null;
 }
 
 async function startListen() {
@@ -192,7 +141,7 @@ async function startListen() {
         await invoke("start_listen", { target: window });
         isEngineRunning.value = true;
     } catch (error) {
-        dialog.error({ title: "错误", content: "启动监听失败: " + String(error), positiveText: "确定" });
+        alertBox("错误", "启动监听失败: " + String(error), "error");
     }
 }
 
@@ -225,7 +174,7 @@ async function startCalibrate() {
         calibPoints.value = [];
         calibrating.value = true;
     } catch (error) {
-        dialog.error({ title: "错误", content: "截图失败: " + String(error), positiveText: "确定" });
+        alertBox("错误", "截图失败: " + String(error), "error");
     }
 }
 
@@ -242,44 +191,44 @@ function onCalibClick(e: MouseEvent) {
 
 async function confirmCalibrate() {
     if (calibPoints.value.length !== 2) {
-        dialog.warning({ title: "提示", content: "请先完成两个交叉点的点击", positiveText: "确定" });
+        alertBox("提示", "请先完成两个交叉点的点击", "warning");
         return;
     }
     const [p0, p1] = calibPoints.value;
     await invoke("set_calibration", { x0: p0.x, y0: p0.y, x1: p1.x, y1: p1.y });
     calibrating.value = false;
-    dialog.success({ title: "校准完成", content: "棋盘区域已保存，可以启动监听了", positiveText: "确定" });
+    alertBox("校准完成", "棋盘区域已保存，可以启动监听了", "info");
 }
 
 // ---------------- 引擎配置 ----------------
 async function setEngineDepth() {
-    await invoke("set_engine_depth", { depth: config.value.depth });
+    await invoke("set_engine_depth", { depth: Number(config.value.depth) || 0 });
 }
 
 async function setEngineTime() {
-    await invoke("set_engine_time", { time: config.value.time });
+    await invoke("set_engine_time", { time: Number(config.value.time) || 0 });
 }
 
 async function setEngineThreads() {
-    await invoke("set_engine_threads", { num: config.value.threads });
+    await invoke("set_engine_threads", { num: Number(config.value.threads) || 0 });
     await invoke("reload_engine");
 }
 
 async function setEngineHash() {
-    await invoke("set_engine_hash", { size: config.value.hash });
+    await invoke("set_engine_hash", { size: Number(config.value.hash) || 0 });
     await invoke("reload_engine");
 }
 
 async function setEngineMultipv() {
-    await invoke("set_engine_multipv", { num: config.value.multipv });
+    await invoke("set_engine_multipv", { num: Number(config.value.multipv) || 0 });
 }
 
 async function setEngineAltScoreGap() {
-    await invoke("set_engine_alt_score_gap", { gap: config.value.alt_score_gap });
+    await invoke("set_engine_alt_score_gap", { gap: Number(config.value.alt_score_gap) || 0 });
 }
 
 async function setEngineRule() {
-    await invoke("set_engine_rule", { rule: config.value.rule });
+    await invoke("set_engine_rule", { rule: Number(config.value.rule) || 0 });
     await invoke("reload_engine");
 }
 
@@ -293,174 +242,145 @@ async function getEngineConfig() {
 </script>
 
 <template>
-    <n-card class="toolbar" :bordered="false" size="small">
-        <n-space vertical size="small">
-            <n-flex align="center" justify="space-between">
-                <n-select
-                    size="small"
-                    v-model:value="mode"
-                    :options="options"
-                    :consistent-menu-width="false"
-                    placeholder="选择模式"
-                    class="mode-select"
-                />
+    <div class="toolbar panel-card flex items-center gap-2.5">
+        <select v-model="mode" class="app-select mode-select">
+            <option v-for="o in options" :key="o.value" :value="o.value">{{ o.label }}</option>
+        </select>
 
-                <n-space align="center">
-                    <n-select
-                        size="small"
-                        v-model:value="sideValue"
-                        :options="sideOptions"
-                        :consistent-menu-width="false"
-                        @update:value="(v: 'auto' | 'black' | 'white') => setSide(v)"
-                        class="side-select"
-                    />
+        <select :value="sideValue" class="app-select side-select" @change="setSide(($event.target as HTMLSelectElement).value as 'auto' | 'black' | 'white')">
+            <option v-for="o in sideOptions" :key="o.value" :value="o.value">{{ o.label }}</option>
+        </select>
 
-                    <n-space>
-                        <n-tooltip trigger="hover" placement="bottom">
-                            <template #trigger>
-                                <n-button
-                                    circle
-                                    size="small"
-                                    :type="isEngineRunning ? 'error' : 'primary'"
-                                    @click="toggleEngine"
-                                >
-                                    {{ isEngineRunning ? "停" : "启" }}
-                                </n-button>
-                            </template>
-                            {{ isEngineRunning ? "停止监听" : "启动监听" }}
-                        </n-tooltip>
+        <span class="tip-wrap" :data-tip="isEngineRunning ? '停止监听' : '启动监听'">
+            <button :class="['tool-btn', isEngineRunning ? 'tool-btn-stop' : 'tool-btn-start']"
+                @click="toggleEngine">{{ isEngineRunning ? "停止" : "启动" }}</button>
+        </span>
+        <span class="tip-wrap" data-tip="棋盘校准">
+            <button class="tool-btn" @click="startCalibrate">校准</button>
+        </span>
+        <span class="tip-wrap" data-tip="引擎配置">
+            <button class="tool-btn" @click="showEngineConfig = true">配置</button>
+        </span>
+        <button v-if="!licenseStatus.licensed" :class="['app-btn', licenseStatus.trial_expired ? 'license-tag-expired' : 'license-tag-trial']"
+            @click="showLicense = true">
+            {{ licenseStatus.trial_expired ? "未授权·小白档" : `试用剩余 ${licenseStatus.trial_days_left} 天` }}
+        </button>
+    </div>
 
-                        <n-tooltip trigger="hover" placement="bottom">
-                            <template #trigger>
-                                <n-button circle size="small" type="info" @click="startCalibrate">校</n-button>
-                            </template>
-                            棋盘校准
-                        </n-tooltip>
+    <WindowPicker v-if="showPicker" :windows="pickerWindows" @confirm="onPickerConfirm" @cancel="onPickerCancel" />
 
-                        <n-tooltip trigger="hover" placement="bottom">
-                            <template #trigger>
-                                <n-button circle size="small" type="warning" @click="showEngineConfig = true">配</n-button>
-                            </template>
-                            引擎配置
-                        </n-tooltip>
-                    </n-space>
-                </n-space>
-            </n-flex>
-        </n-space>
-
-        <!-- 校准对话框 -->
-        <n-modal v-model:show="calibrating" preset="card" title="棋盘校准" style="max-width: 640px">
-            <n-space vertical>
-                <n-text type="info">{{ calibStepHint }}</n-text>
-                <div class="calib-image-wrap" @click="onCalibClick">
-                    <img :src="'data:image/png;base64,' + calibImage?.base64" class="calib-image" />
-                    <div
-                        v-for="(p, i) in calibPoints"
-                        :key="i"
-                        class="calib-dot"
-                        :style="{ left: p.x * 100 + '%', top: p.y * 100 + '%' }"
-                    ></div>
+    <!-- 校准对话框 -->
+    <Teleport to="body">
+        <Transition name="fade">
+            <div v-if="calibrating" class="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/30">
+                <div class="w-[640px] max-w-[94vw] rounded-2xl border border-[#e7e0d2] bg-[#fffdf8] p-5 shadow-xl">
+                    <header class="flex items-center justify-between">
+                        <h3 class="text-sm font-semibold text-stone-700">棋盘校准</h3>
+                        <button
+                            class="flex h-6 w-6 items-center justify-center rounded-full text-stone-400 hover:bg-stone-100 hover:text-stone-600"
+                            @click="calibrating = false">✕</button>
+                    </header>
+                    <p class="mt-2 text-[13px] text-sky-700">{{ calibStepHint }}</p>
+                    <div class="calib-image-wrap mt-2" @click="onCalibClick">
+                        <img :src="'data:image/png;base64,' + calibImage?.base64" class="calib-image" />
+                        <div
+                            v-for="(p, i) in calibPoints"
+                            :key="i"
+                            class="calib-dot"
+                            :style="{ left: p.x * 100 + '%', top: p.y * 100 + '%' }"
+                        ></div>
+                    </div>
+                    <div class="mt-3 flex justify-end gap-2">
+                        <button class="app-btn" @click="calibrating = false">取消</button>
+                        <button class="app-btn app-btn-primary" :disabled="calibPoints.length !== 2"
+                            :style="calibPoints.length !== 2 ? 'opacity:0.55;cursor:not-allowed' : ''"
+                            @click="confirmCalibrate">确认校准</button>
+                    </div>
                 </div>
-                <n-flex justify="end">
-                    <n-button @click="calibrating = false">取消</n-button>
-                    <n-button type="primary" :disabled="calibPoints.length !== 2" @click="confirmCalibrate">
-                        确认校准
-                    </n-button>
-                </n-flex>
-            </n-space>
-        </n-modal>
+            </div>
+        </Transition>
+    </Teleport>
 
-        <!-- 引擎配置抽屉 -->
-        <n-drawer v-model:show="showEngineConfig" :width="300" placement="right">
-            <n-drawer-content title="引擎配置">
-                <n-form :model="config" label-placement="left" label-width="80">
-                    <n-form-item label="深度">
-                        <n-input-number
-                            v-model:value="config.depth"
-                            button-placement="both"
-                            :min="0"
-                            :max="64"
-                            style="width: 120px"
-                            @update:value="setEngineDepth"
-                        />
-                    </n-form-item>
-                    <n-form-item label="时间(s)">
-                        <n-input-number
-                            v-model:value="config.time"
-                            button-placement="both"
-                            :step="0.5"
-                            :precision="1"
-                            :min="0.2"
-                            :max="120"
-                            style="width: 120px"
-                            @update:value="setEngineTime"
-                        />
-                    </n-form-item>
-                    <n-form-item label="线程数">
-                        <n-input-number
-                            v-model:value="config.threads"
-                            button-placement="both"
-                            :min="1"
-                            :max="64"
-                            style="width: 120px"
-                            @update:value="setEngineThreads"
-                        />
-                    </n-form-item>
-                    <n-form-item label="哈希表(m)">
-                        <n-input-number
-                            v-model:value="config.hash"
-                            button-placement="both"
-                            :min="32"
-                            :max="102400"
-                            style="width: 120px"
-                            @update:value="setEngineHash"
-                        />
-                    </n-form-item>
-                    <n-form-item label="候选招数">
-                        <n-input-number
-                            v-model:value="config.multipv"
-                            button-placement="both"
-                            :min="1"
-                            :max="5"
-                            style="width: 120px"
-                            @update:value="setEngineMultipv"
-                        />
-                    </n-form-item>
-                    <n-form-item label="次优分差">
-                        <n-input-number
-                            v-model:value="config.alt_score_gap"
-                            button-placement="both"
-                            :min="0"
-                            :max="1000"
-                            :step="10"
-                            style="width: 120px"
-                            @update:value="setEngineAltScoreGap"
-                        />
-                    </n-form-item>
-                    <n-form-item label="对局规则">
-                        <n-select
-                            v-model:value="config.rule"
-                            :options="ruleOptions"
-                            style="width: 120px"
-                            @update:value="setEngineRule"
-                        />
-                    </n-form-item>
-                </n-form>
-                <n-divider />
-                <n-text depth="3" style="font-size: 12px">
-                    线程 / 哈希 / 规则修改后会自动重启引擎生效
-                </n-text>
-            </n-drawer-content>
-        </n-drawer>
-    </n-card>
+    <Teleport to="body">
+        <Transition name="fade">
+            <div v-if="showEngineConfig" class="fixed inset-0 z-40 bg-stone-900/25"
+                @click.self="showEngineConfig = false">
+                <Transition name="drawer">
+                    <aside v-if="showEngineConfig"
+                        class="absolute top-0 right-0 h-full w-[300px] border-l border-[#e7e0d2] bg-[#fffdf8] shadow-2xl">
+                        <header class="flex items-center justify-between border-b border-[#e7e0d2] px-4 py-3">
+                            <h3 class="text-sm font-semibold text-stone-700">引擎配置</h3>
+                            <button
+                                class="flex h-6 w-6 items-center justify-center rounded-full text-stone-400 hover:bg-stone-100 hover:text-stone-600"
+                                @click="showEngineConfig = false">✕</button>
+                        </header>
+                        <div class="flex flex-col gap-1 px-4 py-3">
+                            <label class="form-row">
+                                <span class="form-label">深度</span>
+                                <input v-model.number="config.depth" type="number" min="0" max="64"
+                                    class="app-input w-[120px]" @change="setEngineDepth" />
+                            </label>
+                            <label class="form-row">
+                                <span class="form-label">时间(s)</span>
+                                <input v-model.number="config.time" type="number" min="0.2" max="120" step="0.5"
+                                    class="app-input w-[120px]" @change="setEngineTime" />
+                            </label>
+                            <label class="form-row">
+                                <span class="form-label">线程数</span>
+                                <input v-model.number="config.threads" type="number" min="1" max="64"
+                                    class="app-input w-[120px]" @change="setEngineThreads" />
+                            </label>
+                            <label class="form-row">
+                                <span class="form-label">哈希表(m)</span>
+                                <input v-model.number="config.hash" type="number" min="32" max="102400"
+                                    class="app-input w-[120px]" @change="setEngineHash" />
+                            </label>
+                            <label class="form-row">
+                                <span class="form-label">候选招数</span>
+                                <input v-model.number="config.multipv" type="number" min="1" max="5"
+                                    class="app-input w-[120px]" @change="setEngineMultipv" />
+                            </label>
+                            <label class="form-row">
+                                <span class="form-label">次优分差</span>
+                                <input v-model.number="config.alt_score_gap" type="number" min="0" max="1000"
+                                    step="10" class="app-input w-[120px]" @change="setEngineAltScoreGap" />
+                            </label>
+                            <label class="form-row">
+                                <span class="form-label">对局规则</span>
+                                <select v-model.number="config.rule" class="app-select w-[120px]" @change="setEngineRule">
+                                    <option v-for="o in ruleOptions" :key="o.value" :value="o.value">{{ o.label }}</option>
+                                </select>
+                            </label>
+                        </div>
+                        <p class="mt-1 border-t border-[#e7e0d2] px-4 py-3 text-xs text-stone-400">
+                            线程 / 哈希 / 规则修改后会自动重启引擎生效
+                        </p>
+                        <div class="border-t border-[#e7e0d2] px-4 py-3">
+                            <div class="flex items-center justify-between">
+                                <div class="text-xs">
+                                    <span v-if="licenseStatus.licensed" class="text-green-700">已授权: {{ licenseStatus.name }}</span>
+                                    <span v-else-if="licenseStatus.trial_expired" class="text-red-600">试用已结束 · 小白档</span>
+                                    <span v-else class="text-amber-600">试用期剩余 {{ licenseStatus.trial_days_left }} 天</span>
+                                </div>
+                                <button class="app-btn" @click="showLicense = true">
+                                    {{ licenseStatus.licensed ? "查看授权" : "激活" }}
+                                </button>
+                            </div>
+                        </div>
+                    </aside>
+                </Transition>
+            </div>
+        </Transition>
+    </Teleport>
+
+    <LicenseDialog v-if="showLicense" :status="licenseStatus" @updated="onLicenseUpdated"
+        @close="showLicense = false" />
 </template>
 
 <style scoped>
 .toolbar {
     width: 100%;
-    padding: 8px;
-    border-radius: 8px;
-    background-color: transparent;
+    padding: 8px 10px;
 }
 
 .mode-select {
@@ -469,6 +389,34 @@ async function getEngineConfig() {
 
 .side-select {
     width: 90px;
+}
+
+/* 工具栏授权状态标签 */
+.license-tag-trial {
+    color: #b45309;
+    border-color: #e2bd85;
+    background-color: #fdf6ea;
+}
+
+.license-tag-expired {
+    color: #dc2626;
+    border-color: #f0b9b9;
+    background-color: #fdf1f0;
+    font-weight: 600;
+}
+
+.form-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 40px;
+}
+
+.form-label {
+    width: 80px;
+    flex-shrink: 0;
+    font-size: 13px;
+    color: #57534e;
 }
 
 .calib-image-wrap {
@@ -491,40 +439,5 @@ async function getEngineConfig() {
     background: #e74c3c;
     box-shadow: 0 0 0 2px #fff;
     pointer-events: none;
-}
-
-:deep(.n-button) {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 36px;
-    height: 36px;
-    transition: all 0.3s;
-}
-
-:deep(.n-button:hover) {
-    transform: translateY(-2px);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-}
-
-:deep(.window-title) {
-    font-weight: 500;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 360px;
-}
-
-:deep(.window-app) {
-    font-size: 12px;
-    color: #999;
-    margin-top: 4px;
-    display: flex;
-    align-items: center;
-}
-
-:deep(.selected-window) {
-    border-color: var(--primary-color) !important;
-    background-color: rgba(var(--primary-color-rgb), 0.05);
 }
 </style>
